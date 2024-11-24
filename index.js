@@ -1,110 +1,100 @@
-const fs = require("fs").promises;
-const http = require("http");
+const express = require("express");
 const { Command } = require("commander");
+const fs = require("fs");
 const path = require("path");
-const superagent = require("superagent");
+const multer = require("multer");
 
 const program = new Command();
-
 program
   .requiredOption("-h, --host <host>", "адреса сервера")
   .requiredOption("-p, --port <port>", "порт сервера")
-  .requiredOption(
-    "-c, --cache <path>",
-    "шлях до директорії, яка міститиме закешовані файли"
-  );
+  .requiredOption("-c, --cache <cache>", "шлях до директорії для кешу")
+  .parse(process.argv);
 
-program.parse(process.argv);
+const options = program.opts();
+const app = express();
 
-const { host, port, cache } = program.opts();
+app.use(express.urlencoded({ extended: true }));
+app.use(express.text());
 
-function getCacheFilePath(code) {
-  return path.join(cache, `${code}.jpg`);
+const upload = multer();
+
+const cacheDir = path.resolve(options.cache);
+if (!fs.existsSync(cacheDir)) {
+  fs.mkdirSync(cacheDir);
 }
 
-const fetchFromHttpCat = async (httpCode) => {
-  try {
-    const response = await superagent.get(`https://http.cat/${httpCode}`);
-    return response.body;
-  } catch (err) {
-    throw new Error("Картинка не знайдена на сервері http.cat");
+app.get("/notes/:name", (req, res) => {
+  const notePath = path.join(cacheDir, `${req.params.name}.txt`);
+  if (!fs.existsSync(notePath)) {
+    return res.status(404).send("Not found");
   }
-};
-
-const server = http.createServer(async (req, res) => {
-  const urlParts = req.url.split("/");
-  const httpCode = urlParts[1];
-
-  if (!httpCode) {
-    res.writeHead(400, { "Content-Type": "text/plain" });
-    res.end("Невірний запит");
-    return;
-  }
-
-  const cacheFilePath = getCacheFilePath(httpCode);
-
-  switch (req.method) {
-    case "GET": {
-      try {
-        const imageData = await fs.readFile(cacheFilePath);
-        res.writeHead(200, { "Content-Type": "image/jpeg" });
-        console.log("взято з кешу");
-        res.end(imageData);
-      } catch (err) {
-        const httpCatImage = await fetchFromHttpCat(httpCode);
-
-        if (httpCatImage) {
-          console.log("взято з сайту");
-          await fs.writeFile(cacheFilePath, httpCatImage);
-          res.writeHead(200, { "Content-Type": "image/jpeg" });
-          res.end(httpCatImage);
-        } else {
-          res.writeHead(404, { "Content-Type": "text/plain" });
-          res.end("картинка не знайдена на http.cat");
-        }
-      }
-      break;
-    }
-
-    case "PUT": {
-      let imageData = [];
-
-      req.on("data", (chunk) => {
-        imageData.push(chunk);
-      });
-      req.on("end", async () => {
-        imageData = Buffer.concat(imageData);
-        try {
-          await fs.writeFile(cacheFilePath, imageData);
-          res.writeHead(201, { "Content-Type": "text/plain" });
-          res.end("Картинка збережена");
-        } catch (err) {
-          res.writeHead(500, { "Content-Type": "text/plain" });
-          res.end("Помилка при записі файлу");
-        }
-      });
-      break;
-    }
-
-    case "DELETE": {
-      try {
-        await fs.unlink(cacheFilePath);
-        res.writeHead(200, { "Content-Type": "text/plain" });
-        res.end("Картинка видалена");
-      } catch (err) {
-        res.writeHead(404, { "Content-Type": "text/plain" });
-        res.end("Картинка не знайдена");
-      }
-      break;
-    }
-
-    default: {
-      res.writeHead(405, { "Content-Type": "text/plain" });
-      res.end("Метод не дозволено");
-      break;
-    }
-  }
+  const noteText = fs.readFileSync(notePath, "utf-8");
+  res.send(noteText);
 });
-server.listen(port, host, () => {
-  console.log(`Сервер запущено на ${host}:${port}`);
+
+app.put("/notes/:name", (req, res) => {
+  const notePath = path.join(cacheDir, `${req.params.name}.txt`);
+
+  if (!fs.existsSync(notePath)) {
+    return res.status(404).send("Not found");
+  }
+
+  fs.writeFileSync(notePath, req.body || "");
+  res.sendStatus(200);
+});
+
+app.delete("/notes/:name", (req, res) => {
+  const notePath = path.join(cacheDir, `${req.params.name}.txt`);
+  if (!fs.existsSync(notePath)) {
+    return res.status(404).send("Not found");
+  }
+  fs.unlinkSync(notePath);
+  res.sendStatus(200);
+});
+
+app.get("/notes", (req, res) => {
+  const notes = fs.readdirSync(cacheDir).map((filename) => {
+    const noteName = path.parse(filename).name;
+    const noteText = fs.readFileSync(path.join(cacheDir, filename), "utf-8");
+    return { name: noteName, text: noteText };
+  });
+  res.status(200).json(notes);
+});
+
+app.post("/write", upload.none(), (req, res) => {
+  const { note_name, note } = req.body;
+
+  if (!note_name || !note) {
+    return res.status(400).send("Missing required fields: note_name or note");
+  }
+
+  const notePath = path.join(cacheDir, `${note_name}.txt`);
+  if (fs.existsSync(notePath)) {
+    return res.status(400).send("Note already exists");
+  }
+
+  fs.writeFileSync(notePath, note);
+  res.sendStatus(201);
+});
+
+app.get("/UploadForm.html", (req, res) => {
+  const formHtml = `
+    <html>
+    <body>
+      <h2>Upload Form</h2>
+      <form method="post" action="/write" enctype="multipart/form-data">
+        <label for="note_name_input">Note Name:</label><br>
+        <input type="text" id="note_name_input" name="note_name"><br><br>
+        <label for="note_input">Note:</label><br>
+        <textarea id="note_input" name="note" rows="4" cols="50"></textarea><br><br>
+        <button type="submit">Upload</button>
+      </form>
+    </body>
+    </html>`;
+  res.status(200).send(formHtml);
+});
+
+const server = app.listen(options.port, options.host, () => {
+  console.log(`Server running at http://${options.host}:${options.port}/`);
 });

@@ -1,5 +1,5 @@
 {
-  "name": "bc2024-4",
+  "name": "bc2024-5",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -8,17 +8,18 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fyurchik/bc2024-4.git"
+    "url": "git+https://github.com/fyurchik/bc2024-5.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/fyurchik/bc2024-4/issues"
+    "url": "https://github.com/fyurchik/bc2024-5/issues"
   },
-  "homepage": "https://github.com/fyurchik/bc2024-4#readme",
+  "homepage": "https://github.com/fyurchik/bc2024-5#readme",
   "dependencies": {
     "commander": "^12.1.0",
-    "superagent": "^10.1.1"
+    "express": "^4.21.1",
+    "multer": "^1.4.5-lts.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.7"
