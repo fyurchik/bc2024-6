@@ -3,6 +3,8 @@ const { Command } = require("commander");
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
+const yaml = require("js-yaml");
+const swaggerUi = require("swagger-ui-express");
 
 const program = new Command();
 program
@@ -13,6 +15,9 @@ program
 
 const options = program.opts();
 const app = express();
+
+const swaggerDocument = yaml.load(fs.readFileSync("./swagger.yml", "utf8"));
+app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text());
